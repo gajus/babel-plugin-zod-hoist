@@ -107,28 +107,6 @@ const isGlobalZodReference = (
 };
 
 /**
- * Get the index of a statement in the program body.
- * Returns -1 if not found.
- */
-const getStatementIndex = (
-  path: NodePath,
-  programPath: NodePath<t.Program>,
-): number => {
-  let current: NodePath | null = path;
-
-  // Walk up to find the direct child of Program
-  while (current && current.parentPath !== programPath) {
-    current = current.parentPath;
-  }
-
-  if (!current) {
-    return -1;
-  }
-
-  return programPath.node.body.indexOf(current.node as t.Statement);
-};
-
-/**
  * Check if an expression can be safely hoisted to the top of the file.
  * Returns false if it references local variables, `this`, or any top-level
  * variable declarations (const/let/var) which would cause TDZ errors.
