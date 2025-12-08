@@ -130,14 +130,14 @@ const getStatementIndex = (
 
 /**
  * Check if an expression can be safely hoisted to the top of the file.
- * Returns false if it references local variables, `this`, mutable bindings,
- * or would cause TDZ errors.
+ * Returns false if it references local variables, `this`, or any top-level
+ * variable declarations (const/let/var) which would cause TDZ errors.
+ * Only imports are safe to reference when hoisting to the top.
  */
 const canSafelyHoist = (
   path: NodePath<t.CallExpression>,
   programPath: NodePath<t.Program>,
 ): boolean => {
-  const schemaStatementIndex = getStatementIndex(path, programPath);
   let canHoist = true;
 
   path.traverse({
@@ -175,42 +175,25 @@ const canSafelyHoist = (
           return;
         }
 
-        // If binding is at program scope, check for TDZ and mutability
+        // If binding is at program scope
         if (binding.scope === programPath.scope) {
-          // Check if it's a mutable binding (let/var)
-          const declarationPath = binding.path.parentPath;
-
+          // Imports are safe - they're hoisted at runtime in ES modules
           if (
-            declarationPath?.isVariableDeclaration() &&
-            declarationPath.node.kind !== 'const'
+            binding.path.isImportSpecifier() ||
+            binding.path.isImportDefaultSpecifier() ||
+            binding.path.isImportNamespaceSpecifier()
           ) {
-            // Don't hoist if referencing let/var (mutable)
-            canHoist = false;
-            idPath.stop();
             return;
           }
 
-          // Check for TDZ: is the binding declared AFTER the schema's position?
-          const bindingStatementIndex = getStatementIndex(
-            binding.path,
-            programPath,
-          );
-
-          if (
-            bindingStatementIndex === -1 ||
-            bindingStatementIndex > schemaStatementIndex
-          ) {
-            // Binding is declared after the schema, would cause TDZ error
-            canHoist = false;
-            idPath.stop();
-            return;
-          }
-
-          // Binding is at program scope and declared before - safe to hoist
+          // Any other program-scope binding (const/let/var) is NOT safe
+          // because our hoisted schema would be placed BEFORE it, causing TDZ
+          canHoist = false;
+          idPath.stop();
           return;
         }
 
-        // Otherwise, it's a local variable from an enclosing function - can't hoist
+        // Local variable from enclosing function - can't hoist
         canHoist = false;
         idPath.stop();
       }

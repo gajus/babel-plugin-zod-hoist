@@ -530,19 +530,19 @@ pluginTester({
     {
       code: multiline`
         const allowedTypes = ['a', 'b', 'c'];
+    
         function getSchema() {
           return z.enum(allowedTypes);
         }
       `,
       output: multiline`
-        const _schema_ff40bb = z.enum(allowedTypes);
         const allowedTypes = ["a", "b", "c"];
         function getSchema() {
-          return _schema_ff40bb;
+          return z.enum(allowedTypes);
         }
       `,
       title:
-        'hoists schema referencing top-level const declared earlier in file',
+        'does not hoist schema referencing top-level const (would cause TDZ)',
     },
     {
       code: multiline`
@@ -595,6 +595,25 @@ pluginTester({
         }
       `,
       title: 'does not hoist schema referencing let variable (mutable)',
+    },
+    {
+      code: multiline`
+        import { z } from 'zod';
+        import { myRefine } from './utils';
+    
+        function getSchema() {
+          return z.string().refine(myRefine);
+        }
+      `,
+      output: multiline`
+        const _schema_1c526a1f = z.string().refine(myRefine);
+        import { z } from "zod";
+        import { myRefine } from "./utils";
+        function getSchema() {
+          return _schema_1c526a1f;
+        }
+      `,
+      title: 'hoists schema referencing imported function',
     },
   ],
 });
