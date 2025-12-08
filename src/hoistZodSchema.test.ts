@@ -511,5 +511,90 @@ pluginTester({
       title:
         'does not hoist when calling method on non-z identifier (baseSchema.extend)',
     },
+    {
+      code: multiline`
+        function getSchema() {
+          return z.enum(allowedTypes);
+        }
+        const allowedTypes = ['a', 'b', 'c'];
+      `,
+      output: multiline`
+        function getSchema() {
+          return z.enum(allowedTypes);
+        }
+        const allowedTypes = ["a", "b", "c"];
+      `,
+      title:
+        'does not hoist schema referencing top-level const declared later in file',
+    },
+    {
+      code: multiline`
+        const allowedTypes = ['a', 'b', 'c'];
+        function getSchema() {
+          return z.enum(allowedTypes);
+        }
+      `,
+      output: multiline`
+        const _schema_ff40bb = z.enum(allowedTypes);
+        const allowedTypes = ["a", "b", "c"];
+        function getSchema() {
+          return _schema_ff40bb;
+        }
+      `,
+      title:
+        'hoists schema referencing top-level const declared earlier in file',
+    },
+    {
+      code: multiline`
+        function getSchema() {
+          return z.object({ type: z.enum(Types), status: z.enum(Statuses) });
+        }
+        const Types = ['a', 'b'] as const;
+        const Statuses = ['pending', 'done'] as const;
+      `,
+      output: multiline`
+        function getSchema() {
+          return z.object({
+            type: z.enum(Types),
+            status: z.enum(Statuses),
+          });
+        }
+        const Types = ["a", "b"] as const;
+        const Statuses = ["pending", "done"] as const;
+      `,
+      skip: true,
+      title:
+        'does not hoist schema referencing multiple top-level consts declared later',
+    },
+    {
+      code: multiline`
+        function getSchema() {
+          return z.string().default(DEFAULT_VALUE);
+        }
+        export const DEFAULT_VALUE = 'hello';
+      `,
+      output: multiline`
+        function getSchema() {
+          return z.string().default(DEFAULT_VALUE);
+        }
+        export const DEFAULT_VALUE = "hello";
+      `,
+      title: 'does not hoist schema referencing exported const declared later',
+    },
+    {
+      code: multiline`
+        let counter = 0;
+        function getSchema() {
+          return z.number().default(counter);
+        }
+      `,
+      output: multiline`
+        let counter = 0;
+        function getSchema() {
+          return z.number().default(counter);
+        }
+      `,
+      title: 'does not hoist schema referencing let variable (mutable)',
+    },
   ],
 });

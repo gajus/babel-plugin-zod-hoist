@@ -107,14 +107,38 @@ const isGlobalZodReference = (
 };
 
 /**
- * Check if an expression references variables that are locally scoped
- * (i.e., not available at the program/module level), or uses `this`.
+ * Get the index of a statement in the program body.
+ * Returns -1 if not found.
  */
-const referencesLocalVariables = (
+const getStatementIndex = (
+  path: NodePath,
+  programPath: NodePath<t.Program>,
+): number => {
+  let current: NodePath | null = path;
+
+  // Walk up to find the direct child of Program
+  while (current && current.parentPath !== programPath) {
+    current = current.parentPath;
+  }
+
+  if (!current) {
+    return -1;
+  }
+
+  return programPath.node.body.indexOf(current.node as t.Statement);
+};
+
+/**
+ * Check if an expression can be safely hoisted to the top of the file.
+ * Returns false if it references local variables, `this`, mutable bindings,
+ * or would cause TDZ errors.
+ */
+const canSafelyHoist = (
   path: NodePath<t.CallExpression>,
   programPath: NodePath<t.Program>,
 ): boolean => {
-  let hasLocalRef = false;
+  const schemaStatementIndex = getStatementIndex(path, programPath);
+  let canHoist = true;
 
   path.traverse({
     Identifier(idPath) {
@@ -144,11 +168,6 @@ const referencesLocalVariables = (
       const binding = idPath.scope.getBinding(idPath.node.name);
 
       if (binding) {
-        // If binding is at program scope, it's fine (imports, top-level consts)
-        if (binding.scope === programPath.scope) {
-          return;
-        }
-
         // If binding is defined WITHIN the expression we're hoisting
         // (e.g., callback parameters like `val` in `.transform((val) => val.trim())`),
         // it's fine - the binding will move with the expression
@@ -156,19 +175,54 @@ const referencesLocalVariables = (
           return;
         }
 
+        // If binding is at program scope, check for TDZ and mutability
+        if (binding.scope === programPath.scope) {
+          // Check if it's a mutable binding (let/var)
+          const declarationPath = binding.path.parentPath;
+
+          if (
+            declarationPath?.isVariableDeclaration() &&
+            declarationPath.node.kind !== 'const'
+          ) {
+            // Don't hoist if referencing let/var (mutable)
+            canHoist = false;
+            idPath.stop();
+            return;
+          }
+
+          // Check for TDZ: is the binding declared AFTER the schema's position?
+          const bindingStatementIndex = getStatementIndex(
+            binding.path,
+            programPath,
+          );
+
+          if (
+            bindingStatementIndex === -1 ||
+            bindingStatementIndex > schemaStatementIndex
+          ) {
+            // Binding is declared after the schema, would cause TDZ error
+            canHoist = false;
+            idPath.stop();
+            return;
+          }
+
+          // Binding is at program scope and declared before - safe to hoist
+          return;
+        }
+
         // Otherwise, it's a local variable from an enclosing function - can't hoist
-        hasLocalRef = true;
+        canHoist = false;
         idPath.stop();
       }
     },
 
     ThisExpression() {
       // `this` is context-dependent and cannot be safely hoisted
-      hasLocalRef = true;
+      canHoist = false;
     },
   });
 
-  return hasLocalRef;
+  return canHoist;
 };
 
 /**
@@ -230,8 +284,8 @@ export default declare((api) => {
               return;
             }
 
-            // Skip if the schema references local variables (can't safely hoist)
-            if (referencesLocalVariables(outerPath, programPath)) {
+            // Skip if the schema can't be safely hoisted
+            if (!canSafelyHoist(outerPath, programPath)) {
               return;
             }
 
