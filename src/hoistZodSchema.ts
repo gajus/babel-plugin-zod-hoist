@@ -1,4 +1,4 @@
-import generate from '@babel/generator';
+import { generate } from '@babel/generator';
 import { declare } from '@babel/helper-plugin-utils';
 import { type NodePath } from '@babel/traverse';
 // eslint-disable-next-line id-length
