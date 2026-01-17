@@ -45,8 +45,8 @@ const isZodCall = (node: t.CallExpression): boolean => {
  */
 const EXECUTION_METHODS = new Set([
   'parse',
-  'safeParse',
   'parseAsync',
+  'safeParse',
   'safeParseAsync',
 ]);
 

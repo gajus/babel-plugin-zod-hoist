@@ -703,7 +703,8 @@ pluginTester({
           return _schema_6707424a.safeParseAsync(input);
         }
       `,
-      title: 'does not hoist .safeParseAsync() call, only the schema definition',
+      title:
+        'does not hoist .safeParseAsync() call, only the schema definition',
     },
   ],
 });
