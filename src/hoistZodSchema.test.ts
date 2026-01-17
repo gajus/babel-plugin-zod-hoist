@@ -615,5 +615,95 @@ pluginTester({
       `,
       title: 'hoists schema referencing imported function',
     },
+    {
+      code: multiline`
+        function validate(input) {
+          return z.string().parse(input);
+        }
+      `,
+      output: multiline`
+        const _schema_6707424a = z.string();
+        function validate(input) {
+          return _schema_6707424a.parse(input);
+        }
+      `,
+      title: 'does not hoist .parse() call, only the schema definition',
+    },
+    {
+      code: multiline`
+        function validate(input) {
+          return z.object({ name: z.string() }).parse(input);
+        }
+      `,
+      output: multiline`
+        const _schema_94b7f = z.object({
+          name: z.string(),
+        });
+        function validate(input) {
+          return _schema_94b7f.parse(input);
+        }
+      `,
+      title: 'does not hoist .parse() with complex schema',
+    },
+    {
+      code: multiline`
+        async function getData() {
+          const result = z.object({ data: z.string() }).parse(await fetchData());
+          return result;
+        }
+      `,
+      output: multiline`
+        const _schema_b = z.object({
+          data: z.string(),
+        });
+        async function getData() {
+          const result = _schema_b.parse(await fetchData());
+          return result;
+        }
+      `,
+      title: 'does not hoist .parse() with await expression argument',
+    },
+    {
+      code: multiline`
+        function validate(input) {
+          return z.string().safeParse(input);
+        }
+      `,
+      output: multiline`
+        const _schema_6707424a = z.string();
+        function validate(input) {
+          return _schema_6707424a.safeParse(input);
+        }
+      `,
+      title: 'does not hoist .safeParse() call, only the schema definition',
+    },
+    {
+      code: multiline`
+        async function validate(input) {
+          return z.string().parseAsync(input);
+        }
+      `,
+      output: multiline`
+        const _schema_6707424a = z.string();
+        async function validate(input) {
+          return _schema_6707424a.parseAsync(input);
+        }
+      `,
+      title: 'does not hoist .parseAsync() call, only the schema definition',
+    },
+    {
+      code: multiline`
+        async function validate(input) {
+          return z.string().safeParseAsync(input);
+        }
+      `,
+      output: multiline`
+        const _schema_6707424a = z.string();
+        async function validate(input) {
+          return _schema_6707424a.safeParseAsync(input);
+        }
+      `,
+      title: 'does not hoist .safeParseAsync() call, only the schema definition',
+    },
   ],
 });

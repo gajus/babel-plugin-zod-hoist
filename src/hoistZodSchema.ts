@@ -40,11 +40,38 @@ const isZodCall = (node: t.CallExpression): boolean => {
 };
 
 /**
- * Walk up the AST to find the outermost call expression in a method chain.
+ * Zod methods that execute validation and should not be hoisted.
+ * These methods take runtime values and should remain in their original context.
+ */
+const EXECUTION_METHODS = new Set([
+  'parse',
+  'safeParse',
+  'parseAsync',
+  'safeParseAsync',
+]);
+
+/**
+ * Check if a call expression is calling one of Zod's execution methods.
+ */
+const isExecutionMethod = (path: NodePath<t.CallExpression>): boolean => {
+  const { callee } = path.node;
+
+  if (t.isMemberExpression(callee) && t.isIdentifier(callee.property)) {
+    return EXECUTION_METHODS.has(callee.property.name);
+  }
+
+  return false;
+};
+
+/**
+ * Walk up the AST to find the outermost call expression in a method chain,
+ * stopping before execution methods.
  * For `z.string().optional().default('x')`, starting from `z.string()`,
  * this returns the path to `.default('x')`.
+ * For `z.string().parse(input)`, starting from `z.string()`,
+ * this returns `z.string()` (stops before `.parse()`).
  */
-const getOutermostCall = (
+const getOutermostSchemaCall = (
   path: NodePath<t.CallExpression>,
 ): NodePath<t.CallExpression> => {
   let current = path;
@@ -54,7 +81,16 @@ const getOutermostCall = (
     current.parentPath?.isMemberExpression() &&
     current.parentPath.parentPath?.isCallExpression()
   ) {
-    current = current.parentPath.parentPath as NodePath<t.CallExpression>;
+    const nextCall = current.parentPath
+      .parentPath as NodePath<t.CallExpression>;
+
+    // Stop if the next call is an execution method (parse, safeParse, etc.)
+    // We want to hoist only the schema definition, not the execution
+    if (isExecutionMethod(nextCall)) {
+      break;
+    }
+
+    current = nextCall;
   }
 
   return current;
@@ -64,13 +100,23 @@ const getOutermostCall = (
  * Check if a path is nested inside another Zod call.
  * This handles cases like `z.object({ a: z.string() })` where we don't
  * want to separately hoist the inner `z.string()`.
+ * Execution methods like .parse() are not considered "nesting" Zod calls.
  */
 const isNestedInZodCall = (outerPath: NodePath<t.CallExpression>): boolean => {
   let current = outerPath.parentPath;
 
   while (current) {
-    if (current.isCallExpression() && isZodCall(current.node)) {
-      return true;
+    if (current.isCallExpression()) {
+      // Skip execution methods - they don't count as "nesting"
+      if (isExecutionMethod(current)) {
+        current = current.parentPath;
+        continue;
+      }
+
+      // If it's a Zod call (and not an execution method), it's nesting
+      if (isZodCall(current.node)) {
+        return true;
+      }
     }
 
     current = current.parentPath;
@@ -218,8 +264,13 @@ export default declare((api) => {
               return;
             }
 
-            // Get the outermost call in the method chain
-            const outerPath = getOutermostCall(path);
+            // Skip execution methods - they should not be hoisted
+            if (isExecutionMethod(path)) {
+              return;
+            }
+
+            // Get the outermost schema call (stops before execution methods)
+            const outerPath = getOutermostSchemaCall(path);
 
             // Skip if we've already processed this chain
             if (processedNodes.has(outerPath.node)) {
